@@ -7,6 +7,8 @@ mapper_data_files = list(sorted(filter(lambda o: o.lower().find("mapperoutput") 
                                 key=lambda name: int(name.split("_")[-2])))
 
 with open(f"{folder_name}_mapperOutput.csv", "a+") as csv_file:
+    csv_file.write("id,location_x,location_y,location_z,impact_normal_x,impact_normal_y,impact_normal_z,"
+                   "hit_actor,hit_component,material\n")
     hits_before = 0
     for file_name in mapper_data_files:
         file_name_split = file_name.split("_")
