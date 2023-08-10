@@ -507,6 +507,7 @@ class Mapper:
         print(f"terrain water took: {perf_counter() - start}")
 
         # Height Lines
+        # TODO speed up takes 77s
         if self.generate_height_lines:
             min_step = round(self.z_min / height_line_step_size) * height_line_step_size
             max_step = round(self.z_max / height_line_step_size) * height_line_step_size
