@@ -19,6 +19,11 @@ with open(f"{folder_name}_mapperOutput.csv", "a+") as csv_file:
         for index, raw_hit in enumerate(raw_hits):
             for raw_point in raw_hit.split("\\"):
                 raw_point_split = raw_point.split("|")
-                csv_file.write(f"{hits_before + index}," + ", ".join(raw_point_split) + "\n")
+                csv_file.write(f"{hits_before + index}," +
+                               ",".join(raw_point_split[0].split(" ")) + "," +
+                               ",".join(raw_point_split[1].split(" ")) + "," +
+                               '"' + raw_point_split[2].lower() + '"' + "," +
+                               '"' + raw_point_split[3].lower() + '"' + "," +
+                               '"' + raw_point_split[4].lower() + '"' + "\n")
 
         hits_before += len(raw_hits) - 1
