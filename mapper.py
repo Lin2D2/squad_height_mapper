@@ -7,6 +7,8 @@ from time import perf_counter
 
 import numpy as np
 import sqlite3 as sq
+import pandas as pd
+
 from PIL import Image
 
 from debug_view import DebugView
@@ -76,7 +78,6 @@ wheat_color = 225, 225, 80
 
 # TODO have an point tag, set when writing into database, for example tag: street, building, terrain usw.
 # TODO maybe also find way to speed up height lines
-# TODO check if :memory: is faster
 # TODO find if there is a faster in memory db end goal is for one use so db is no use
 
 
@@ -158,26 +159,34 @@ class Mapper:
                                          "scale_y FLOAT,"
                                          "scale_z FLOAT"
                                          ")")
-            hits_before = 0
-            for file_name in mapper_data_files:
-                file_name_split = file_name.split("_")
-                print(f"loading chunk {int(file_name_split[-2])}/{len(mapper_data_files)}")
-                with open(os.path.join(folder_name, file_name), "r") as file:
-                    raw_hits = file.readline().split(";")
+            # TODO pandas read to sql took: 140.74 but took 12GB RAM
+            pd.read_csv('Yehorivka_AAS_v8_mapperOutput.csv').to_sql('point',
+                                                                    self.database,
+                                                                    if_exists='replace',
+                                                                    index=False)
+            # self.database_cursor.execute(f".import {'Yehorivka_AAS_v8_mapperOutput.csv'} point --csv")
+            # self.database.commit()
 
-                for index, raw_hit in enumerate(raw_hits):
-                    for raw_point in raw_hit.split("\\"):
-                        raw_point_split = raw_point.split("|")
-                        formatted_point = f"{', '.join([tmp_e for tmp_e in raw_point_split[0].split(' ')]).lower()}, " \
-                                          f"{', '.join([tmp_e for tmp_e in raw_point_split[1].split(' ')]).lower()}, " \
-                                          f"'{raw_point_split[2].lower()}', " \
-                                          f"'{raw_point_split[3].lower()}', " \
-                                          f"'{raw_point_split[4].lower()}'"
-                        database_string = f"INSERT INTO point " \
-                                          f"VALUES({hits_before + index}, {formatted_point})"
-                        self.database_cursor.execute(database_string)
-                self.database.commit()
-                hits_before += len(raw_hits) - 1
+            # hits_before = 0
+            # for file_name in mapper_data_files:
+            #     file_name_split = file_name.split("_")
+            #     print(f"loading chunk {int(file_name_split[-2])}/{len(mapper_data_files)}")
+            #     with open(os.path.join(folder_name, file_name), "r") as file:
+            #         raw_hits = file.readline().split(";")
+            #
+            #     for index, raw_hit in enumerate(raw_hits):
+            #         for raw_point in raw_hit.split("\\"):
+            #             raw_point_split = raw_point.split("|")
+            #             formatted_point = f"{', '.join([tmp_e for tmp_e in raw_point_split[0].split(' ')]).lower()}, " \
+            #                               f"{', '.join([tmp_e for tmp_e in raw_point_split[1].split(' ')]).lower()}, " \
+            #                               f"'{raw_point_split[2].lower()}', " \
+            #                               f"'{raw_point_split[3].lower()}', " \
+            #                               f"'{raw_point_split[4].lower()}'"
+            #             database_string = f"INSERT INTO point " \
+            #                               f"VALUES({hits_before + index}, {formatted_point})"
+            #             self.database_cursor.execute(database_string)
+            #     self.database.commit()
+            #     hits_before += len(raw_hits) - 1
 
             self.resolution = int(math.sqrt(
                 self.database_cursor.execute("SELECT MAX(id) FROM point").fetchone()[0]) + 1  # +1 because of index
