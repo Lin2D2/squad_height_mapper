@@ -337,7 +337,7 @@ class Mapper:
         # else:
         #     y = int((abs(self.y_min) - abs(location_y)) / self.step_size)
 
-        return int(y * resolution + x)
+        return int(y * self.resolution + x)
 
     def generate_from_db(self):  # TODO use find_neighbours for house trees and roads as well
         image = np.full((self.resolution, self.resolution, 3), default_color, dtype=np.uint8)
@@ -618,9 +618,9 @@ class Mapper:
 # noinspection SpellCheckingInspection
 mapper = Mapper("Yehorivka_AAS_v8",
                 in_memory_bool=False,
-                generate_bool=False,
-                generate__height_lines_bool=False,
-                debug_view_bool=True,
+                generate_bool=True,
+                generate__height_lines_bool=True,
+                debug_view_bool=False,
                 draw_progress=False)
 
 #                      parsing   generating
