@@ -122,6 +122,10 @@ class Mapper:
                                          "z_max FLOAT,"
                                          "z_min FLOAT"
                                          ")")
+            # TODO have an point tag, set when writing into database, for example tag: street, building, terrain usw.
+            # TODO maybe also find way to speed up height lines
+            # TODO check if :memory: is faster
+            # TODO find if there is a faster in memory db end goal is for one use so db is no use
             self.database_cursor.execute("CREATE TABLE point("
                                          "id INTEGER,"
                                          "location_x FLOAT,"
@@ -333,7 +337,7 @@ class Mapper:
         # else:
         #     y = int((abs(self.y_min) - abs(location_y)) / self.step_size)
 
-        return y * self.resolution + x
+        return int(y * resolution + x)
 
     def generate_from_db(self):  # TODO use find_neighbours for house trees and roads as well
         image = np.full((self.resolution, self.resolution, 3), default_color, dtype=np.uint8)
@@ -350,6 +354,7 @@ class Mapper:
         result_terrain_grass_query = self.database_cursor.execute(query_string)
         print(f"terrain grass query took: {perf_counter() - start}")
         start = perf_counter()
+        # TODO speed up takes 31s
         for point in result_terrain_grass_query:
             image.put(point[0] * 3 + 0, grass_color[0])
             image.put(point[0] * 3 + 1, grass_color[1])
@@ -370,7 +375,7 @@ class Mapper:
             # TODO maybe draw rocks some where else
             if any(key in reference.lower() for key in ["deco", "rock", "grass", "cattails", "foxglove"]):
                 continue
-            print(f"instanced_object: {reference}")
+            # print(f"instanced_object: {reference}")
             char = '"'
             instanced_objects_query = self.database_cursor.execute(
                 f"SELECT * FROM objects WHERE reference = {char}{reference}{char}").fetchall()
@@ -518,8 +523,8 @@ class Mapper:
                                f"WHERE " \
                                f"{height_lines_keys_query}"
                 result_height_lines_query = self.database_cursor.execute(query_string)
-                print(f"height lines query for {int(target_height / 100)}m took: {perf_counter() - start}")
-                start = perf_counter()
+                # print(f"height lines query for {int(target_height / 100)}m took: {perf_counter() - start}")
+                # start = perf_counter()
                 points = dict(result_height_lines_query.fetchall())
                 for point_id, point_z in points.items():
                     value_ = (point_z - target_height) / (height_line_step_size / 2)
@@ -535,7 +540,8 @@ class Mapper:
                                 image.put(point_id * 3 + 2, height_line_color[2])
                 if self.draw_progress:
                     self.debug_view.render_image(image.tobytes())
-                print(f"height lines for {int(target_height / 100)}m took: {perf_counter() - start}")
+                # print(f"height lines for {int(target_height / 100)}m took: {perf_counter() - start}")
+        print(f"height lines took: {perf_counter() - start}")
 
         # Streets
 
@@ -553,6 +559,7 @@ class Mapper:
         result_street_query = self.database_cursor.execute(query_string)
         print(f"streets query took: {perf_counter() - start}")
         start = perf_counter()
+        # TODO speed up takes 11s
         for point in result_street_query:
             # TODO filter for other road types
             if any(key in point[2].lower() for key in bridge_keys):
@@ -590,6 +597,7 @@ class Mapper:
         result_buildings_query = self.database_cursor.execute(query_string)
         print(f"buildings query took: {perf_counter() - start}")
         start = perf_counter()
+        # TODO speed up takes 23s
         for point in result_buildings_query:
             image.put(point[0] * 3 + 0, building_color[0])
             image.put(point[0] * 3 + 1, building_color[1])
@@ -613,3 +621,7 @@ mapper = Mapper("Yehorivka_AAS_v8",
                 generate__height_lines_bool=False,
                 debug_view_bool=True,
                 draw_progress=False)
+
+#                      parsing   generating
+# time took:           237.84    160.96
+# time took in memory: 229.24    152.45
