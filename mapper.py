@@ -74,6 +74,12 @@ corn_color = 200, 200, 80
 wheat_color = 225, 225, 80
 
 
+# TODO have an point tag, set when writing into database, for example tag: street, building, terrain usw.
+# TODO maybe also find way to speed up height lines
+# TODO check if :memory: is faster
+# TODO find if there is a faster in memory db end goal is for one use so db is no use
+
+
 class Mapper:
     def __init__(self, folder_name,
                  in_memory_bool=False,
@@ -122,10 +128,6 @@ class Mapper:
                                          "z_max FLOAT,"
                                          "z_min FLOAT"
                                          ")")
-            # TODO have an point tag, set when writing into database, for example tag: street, building, terrain usw.
-            # TODO maybe also find way to speed up height lines
-            # TODO check if :memory: is faster
-            # TODO find if there is a faster in memory db end goal is for one use so db is no use
             self.database_cursor.execute("CREATE TABLE point("
                                          "id INTEGER,"
                                          "location_x FLOAT,"
