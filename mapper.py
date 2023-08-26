@@ -288,7 +288,7 @@ class Mapper:
 
         # Terrain
         start = perf_counter()
-        image.put(self.point_data["id"][self.point_data["material"].str.contains(grass_key)], grass_color)
+        image[self.point_data["id"][self.point_data["material"].str.contains(grass_key)]] = grass_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
@@ -416,7 +416,7 @@ class Mapper:
         # print(f"terrain tress took: {perf_counter() - start}")
         # TODO speed up took 6.3s
         start = perf_counter()
-        image.put(self.point_data["id"][self.point_data["material"].str.contains(water_key)], water_color)
+        image[self.point_data["id"][self.point_data["material"].str.contains(water_key)]] = water_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
@@ -442,6 +442,8 @@ class Mapper:
                 start_in_after = perf_counter()
                 # TODO 2-3x time spend below here -> optimize
                 for point_id, point_z in points.items():
+                    point_id = int(point_id)
+                    point_z = float(point_z)
                     value_ = (point_z - target_height) / (height_line_step_size / 2)
                     value = int((value_ - 1) * -1 * z_map_range if value_ > 0 else (value_ + 1) * z_map_range)
                     value = value * (255 / z_map_range)
@@ -450,13 +452,11 @@ class Mapper:
                         if 3 > self.num_equal(True,
                                               [abs(target_height - n) < abs(target_height - point_z) for n in neighbours]):
                             if 3 > self.num_equal(point_z, neighbours):
-                                image.put(point_id, height_line_color)
+                                image[point_id] = height_line_color
                 if self.draw_progress:
                     self.debug_view.render_image(image.tobytes())
                 print(f"    getting: {start_in_after - start_in}, working: {perf_counter() - start_in_after}")
         print(f"height lines took: {perf_counter() - start}")
-        breakpoint()
-        # breakpoint()
         #
         # # Streets
         #
@@ -522,7 +522,7 @@ class Mapper:
         #     self.debug_view.render_image(image.tobytes())
         #
         # print(f"buildings took: {perf_counter() - start}")
-        return image
+        return image.reshape(self.resolution, self.resolution, 3)
 
     def generate_image(self):  # TODO mege with generate from db
         image = Image.fromarray(self.generate_from_db())
