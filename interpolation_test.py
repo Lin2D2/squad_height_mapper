@@ -1,4 +1,6 @@
 import math
+import os
+import shutil
 
 from time import perf_counter
 
@@ -9,8 +11,33 @@ import matplotlib.pyplot as plt
 
 from PIL import Image
 
+start = perf_counter()
 
-point_data = pd.read_csv('Yehorivka_AAS_v8_mapperOutput.csv')
+folder_name = "Yehorivka_AAS_v4"
+mapper_data_files = list(sorted(filter(lambda o: o.lower().find("mapperoutput") != -1,
+                                               os.listdir(folder_name)),
+                                key=lambda name: int(name.split("_")[-2])))
+
+with open('Yehorivka_AAS_v4_mapperOutput.csv', 'wb') as wfd:
+    wfd.write(b"id,location_x,location_y,location_z,impact_normal_x,impact_normal_y,impact_normal_z,"
+              b"hit_actor,hit_component,material\n")
+    for f in mapper_data_files:
+        with open(os.path.join(folder_name, f), 'rb') as fd:
+            shutil.copyfileobj(fd, wfd)
+
+print(f"combining files took: {perf_counter()-start}")
+start = perf_counter()
+
+point_data = pd.read_csv("Yehorivka_AAS_v4_mapperOutput.csv")
+
+print(f"read file took: {perf_counter()-start}")
+
+# li = []
+# for filename in mapper_data_files:
+#     df = pd.read_csv(os.path.join(folder_name, filename), index_col=None, header=0)
+#     li.append(df)
+#
+# point_data = pd.concat(li, axis=0, ignore_index=True)
 
 point_data_landscape = point_data["hit_actor"].str.contains("landscape")
 
