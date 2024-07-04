@@ -1,0 +1,11 @@
+/rust_src/target/
+/rust_src/.vs/
+/venv/
+/.idea/
+*.lock
+*.csv
+*.png
+*.jpg
+*.BMP
+*.r16
+*.HDR

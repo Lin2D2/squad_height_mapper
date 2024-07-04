@@ -2,6 +2,7 @@ import os
 import os.path
 import math
 import json
+import random
 
 from time import perf_counter
 
@@ -39,17 +40,17 @@ road_keys = {"centerline", "doublelane", "crossing", "plain", "road"}  # TODO cr
 # noinspection SpellCheckingInspection
 small_road_keys = {"dirtgravel"}
 # noinspection SpellCheckingInspection
-train_track_keys = {"track"}
+train_track_key = "track"
 # noinspection SpellCheckingInspection
-grass_keys = {"grass"}
+grass_key = "grass"
 # noinspection SpellCheckingInspection
-dirt_keys = {"dirt"}
+dirt_key = "dirt"
 # noinspection SpellCheckingInspection
-mud_keys = {"mud"}
+mud_key = "mud"
 # noinspection SpellCheckingInspection
-trees_keys = {"tree"}
+trees_key = "tree"
 # noinspection SpellCheckingInspection
-water_keys = {"water"}  # TODO find better way
+water_key = "water"  # TODO find better way
 
 # values m or cm ? unreal engine
 height_line_step_size = 1000  # 2500 = 25m
@@ -95,164 +96,94 @@ class Mapper:
         self.height_to_colour = lambda height, reduction: int((height + self.z_min * -1) /
                                                               ((self.z_min * -1 + self.z_max) / reduction))
         # noinspection SpellCheckingInspection
-        mapper_data_files = list(sorted(filter(lambda o: o.lower().find("mapperoutput") != -1,
-                                               os.listdir(folder_name)),
-                                        key=lambda name: int(name.split("_")[-2])))
-        instanced_data_files = list(filter(lambda o: o.lower().find("instanced") != -1,
-                                           os.listdir(folder_name)))
+        mapper_data_file = list(filter(lambda o: o.lower().find("mapperoutput") != -1, os.listdir(folder_name)))[0]
+        instanced_data_files = list(filter(lambda o: o.lower().find("instanced") != -1, os.listdir(folder_name)))
         reference_image = os.path.join(folder_name, list(filter(lambda o: o.lower().find(".bmp") != -1,
                                                                 os.listdir(folder_name)))[0])
         print(f"loading files from folder: {folder_name}")
         print(f"parsing data")
         start_time = perf_counter()
 
-        db_exist = os.path.exists(f"height_mapper_{folder_name}.db")
+        self.point_data = pd.read_csv(os.path.join(folder_name, mapper_data_file))
 
-        if in_memory_bool:
-            print(f"running database only in memory")
-            self.database = sq.connect(":memory:")
-        else:
-            self.database = sq.connect(f"height_mapper_{folder_name}.db")
-        self.database_cursor = self.database.cursor()
-        self.database_cursor.execute("PRAGMA JOURNAL_MODE = OFF")
-        self.database_cursor.execute("PRAGMA SYNCHRONOUS = OFF")
-        self.database_cursor.execute("PRAGMA LOCKING_MODE = EXCLUSIVE")
+        self.point_data_landscape = self.point_data["hit_actor"].str.match("landscape")
 
-        if not db_exist or in_memory_bool:
-            self.database_cursor.execute("CREATE TABLE point_meta("
-                                         "map TEXT,"
-                                         "resolution INTEGER,"
-                                         "x_max FLOAT,"
-                                         "x_min FLOAT,"
-                                         "y_max FLOAT,"
-                                         "y_min FLOAT"
-                                         "z_max FLOAT,"
-                                         "z_min FLOAT"
-                                         ")")
-            self.database_cursor.execute("CREATE TABLE point("
-                                         "id INTEGER,"
-                                         "location_x FLOAT,"
-                                         "location_y FLOAT,"
-                                         "location_z FLOAT,"
-                                         "impact_normal_x FLOAT,"
-                                         "impact_normal_y FLOAT,"
-                                         "impact_normal_z FLOAT,"
-                                         "hit_actor TEXT,"
-                                         "hit_component TEXT,"
-                                         "material TEXT"
-                                         ")")
-            self.database_cursor.execute("CREATE TABLE objects_meta("
-                                         "reference TEXT,"
-                                         "max_extend_x FLOAT,"
-                                         "max_extend_y FLOAT,"
-                                         "max_extend_z FLOAT,"
-                                         "min_extend_x FLOAT,"
-                                         "min_extend_y FLOAT,"
-                                         "min_extend_z FLOAT"
-                                         ")")
-            self.database_cursor.execute("CREATE TABLE objects("
-                                         "reference TEXT,"
-                                         "location_x FLOAT,"
-                                         "location_y FLOAT,"
-                                         "location_z FLOAT,"
-                                         "scale_x FLOAT,"
-                                         "scale_y FLOAT,"
-                                         "scale_z FLOAT"
-                                         ")")
-            # TODO pandas read to sql took: 140.74 but took 12GB RAM
-            pd.read_csv('Yehorivka_AAS_v8_mapperOutput.csv').to_sql('point',
-                                                                    self.database,
-                                                                    if_exists='replace',
-                                                                    index=False)
-            # self.database_cursor.execute(f".import {'Yehorivka_AAS_v8_mapperOutput.csv'} point --csv")
-            # self.database.commit()
+        self.resolution = int(math.sqrt(self.point_data["id"][self.point_data_landscape].max())) + 1
+        self.x_min = self.point_data["location_x"][self.point_data_landscape].min()
+        self.x_max = self.point_data["location_x"][self.point_data_landscape].max()
+        self.y_min = self.point_data["location_y"][self.point_data_landscape].min()
+        self.y_max = self.point_data["location_y"][self.point_data_landscape].max()
+        self.z_min = self.point_data["location_z"][self.point_data_landscape].min()
+        self.z_max = self.point_data["location_z"][self.point_data_landscape].max()
 
-            # hits_before = 0
-            # for file_name in mapper_data_files:
-            #     file_name_split = file_name.split("_")
-            #     print(f"loading chunk {int(file_name_split[-2])}/{len(mapper_data_files)}")
-            #     with open(os.path.join(folder_name, file_name), "r") as file:
-            #         raw_hits = file.readline().split(";")
-            #
-            #     for index, raw_hit in enumerate(raw_hits):
-            #         for raw_point in raw_hit.split("\\"):
-            #             raw_point_split = raw_point.split("|")
-            #             formatted_point = f"{', '.join([tmp_e for tmp_e in raw_point_split[0].split(' ')]).lower()}, " \
-            #                               f"{', '.join([tmp_e for tmp_e in raw_point_split[1].split(' ')]).lower()}, " \
-            #                               f"'{raw_point_split[2].lower()}', " \
-            #                               f"'{raw_point_split[3].lower()}', " \
-            #                               f"'{raw_point_split[4].lower()}'"
-            #             database_string = f"INSERT INTO point " \
-            #                               f"VALUES({hits_before + index}, {formatted_point})"
-            #             self.database_cursor.execute(database_string)
-            #     self.database.commit()
-            #     hits_before += len(raw_hits) - 1
+        # # -----------
+        # # TODO remove below also replace with csv and pandas
+        #
+        # db_exist = os.path.exists(f"height_mapper_{folder_name}.db")
+        #
+        # if in_memory_bool:
+        #     print(f"running database only in memory")
+        #     self.database = sq.connect(":memory:")
+        # else:
+        #     self.database = sq.connect(f"height_mapper_{folder_name}.db")
+        # self.database_cursor = self.database.cursor()
+        # self.database_cursor.execute("PRAGMA JOURNAL_MODE = OFF")
+        # self.database_cursor.execute("PRAGMA SYNCHRONOUS = OFF")
+        # self.database_cursor.execute("PRAGMA LOCKING_MODE = EXCLUSIVE")
+        #
+        # if not db_exist or in_memory_bool:
+        #     self.database_cursor.execute("CREATE TABLE objects_meta("
+        #                                  "reference TEXT,"
+        #                                  "max_extend_x FLOAT,"
+        #                                  "max_extend_y FLOAT,"
+        #                                  "max_extend_z FLOAT,"
+        #                                  "min_extend_x FLOAT,"
+        #                                  "min_extend_y FLOAT,"
+        #                                  "min_extend_z FLOAT"
+        #                                  ")")
+        #     self.database_cursor.execute("CREATE TABLE objects("
+        #                                  "reference TEXT,"
+        #                                  "location_x FLOAT,"
+        #                                  "location_y FLOAT,"
+        #                                  "location_z FLOAT,"
+        #                                  "scale_x FLOAT,"
+        #                                  "scale_y FLOAT,"
+        #                                  "scale_z FLOAT"
+        #                                  ")")
+        #
+        #     for file_name in instanced_data_files:
+        #         char = '"'
+        #         print(file_name)
+        #         with open(os.path.join(folder_name, file_name), "r") as file:
+        #             data = json.load(file)
+        #             reference_object = data['name'].split(' ')[-1]
+        #             database_string = f"INSERT INTO objects_meta " \
+        #                               f"VALUES({char}{reference_object}{char}, " \
+        #                               f"{', '.join([e.split('=')[-1] for e in data['max'].split(' ')])}, " \
+        #                               f"{', '.join([e.split('=')[-1] for e in data['min'].split(' ')])})"
+        #             self.database_cursor.execute(database_string)
+        #             self.database.commit()
+        #             for point in data["data"]:
+        #                 point_split = point.split("|")
+        #                 database_string = f"INSERT INTO objects " \
+        #                                   f"VALUES({char}{reference_object}{char}, " \
+        #                                   f"{', '.join([e.split('=')[-1] for e in point_split[0].split(' ')])}, " \
+        #                                   f"{', '.join([e.split('=')[-1] for e in point_split[1].split(' ')])})"
+        #                 self.database_cursor.execute(database_string)
+        #             self.database.commit()
+        #
+        # else:
+        #     print(f"database {folder_name} already exist skipping")
+        #
+        # # ---------------
 
-            self.resolution = int(math.sqrt(
-                self.database_cursor.execute("SELECT MAX(id) FROM point").fetchone()[0]) + 1  # +1 because of index
-                                  )
-            self.x_max = self.database_cursor.execute(
-                "SELECT MAX(location_x) FROM point"
-            ).fetchone()[0]
-            self.x_min = self.database_cursor.execute(
-                "SELECT MIN(location_x) FROM point"
-            ).fetchone()[0]
-            self.y_max = self.database_cursor.execute(
-                "SELECT MAX(location_y) FROM point"
-            ).fetchone()[0]
-            self.y_min = self.database_cursor.execute(
-                "SELECT MIN(location_y) FROM point"
-            ).fetchone()[0]
-            self.z_max = self.database_cursor.execute(
-                "SELECT MAX(location_z) FROM point WHERE hit_actor LIKE '%landscape%'"
-            ).fetchone()[0]
-            self.z_min = self.database_cursor.execute(
-                "SELECT MIN(location_z) FROM point WHERE hit_actor LIKE '%landscape%'"
-            ).fetchone()[0]
-
-            self.database_cursor.execute(
-                f"INSERT INTO point_meta VALUES({self.resolution}, {self.x_max}, {self.x_min}, "
-                f"{self.y_max}, {self.y_min}, {self.z_max}, {self.z_min})")
-
-            for file_name in instanced_data_files:
-                char = '"'
-                print(file_name)
-                with open(os.path.join(folder_name, file_name), "r") as file:
-                    data = json.load(file)
-                    reference_object = data['name'].split(' ')[-1]
-                    database_string = f"INSERT INTO objects_meta " \
-                                      f"VALUES({char}{reference_object}{char}, " \
-                                      f"{', '.join([e.split('=')[-1] for e in data['max'].split(' ')])}, " \
-                                      f"{', '.join([e.split('=')[-1] for e in data['min'].split(' ')])})"
-                    self.database_cursor.execute(database_string)
-                    self.database.commit()
-                    for point in data["data"]:
-                        point_split = point.split("|")
-                        database_string = f"INSERT INTO objects " \
-                                          f"VALUES({char}{reference_object}{char}, " \
-                                          f"{', '.join([e.split('=')[-1] for e in point_split[0].split(' ')])}, " \
-                                          f"{', '.join([e.split('=')[-1] for e in point_split[1].split(' ')])})"
-                        self.database_cursor.execute(database_string)
-                    self.database.commit()
-
-        else:
-            print(f"database {folder_name} already exist skipping")
-            query_result = self.database_cursor.execute(f"SELECT * FROM point_meta").fetchone()
-            self.resolution = int(query_result[0])
-            self.x_max = float(query_result[1])
-            self.x_min = float(query_result[2])
-            self.y_max = float(query_result[3])
-            self.y_min = float(query_result[4])
-            self.z_max = float(query_result[5])
-            self.z_min = float(query_result[6])
-
-        self.x_extend = abs(self.x_max) + abs(self.x_min)
-        self.y_extend = abs(self.y_max) + abs(self.y_min)
-
-        if self.x_extend != self.y_extend:
-            print("::WARNING:: extends not equal")
-
-        self.step_size = self.x_extend / self.resolution
+        # self.x_extend = abs(self.x_max) + abs(self.x_min)
+        # self.y_extend = abs(self.y_max) + abs(self.y_min)
+        #
+        # if self.x_extend != self.y_extend:
+        #     print("::WARNING:: extends not equal")
+        # TODO read from file
+        self.step_size = 100
 
         print(f"parsing took: {perf_counter() - start_time}")
         start_time = perf_counter()
@@ -351,194 +282,171 @@ class Mapper:
         return int(y * self.resolution + x)
 
     def generate_from_db(self):  # TODO use find_neighbours for house trees and roads as well
-        image = np.full((self.resolution, self.resolution, 3), default_color, dtype=np.uint8)
+        image = np.full((self.resolution * self.resolution, 3), default_color, dtype=np.uint8)
 
         # Terrain
         start = perf_counter()
-        terrain_grass_query = "material LIKE" + " OR material LIKE".join(
-            [f"'%{key}%'"
-             for key in grass_keys])
-        query_string = f"SELECT id " \
-                       f"FROM point " \
-                       f"WHERE " \
-                       f"{terrain_grass_query}"
-        result_terrain_grass_query = self.database_cursor.execute(query_string)
-        print(f"terrain grass query took: {perf_counter() - start}")
-        start = perf_counter()
-        # TODO speed up takes 31s
-        for point in result_terrain_grass_query:
-            image.put(point[0] * 3 + 0, grass_color[0])
-            image.put(point[0] * 3 + 1, grass_color[1])
-            image.put(point[0] * 3 + 2, grass_color[2])
+        image[self.point_data["id"][self.point_data["material"].str.contains(grass_key) & self.point_data_landscape]] = grass_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
 
         print(f"terrain grass took: {perf_counter() - start}")
+
+        # start = perf_counter()
+        #
+        # instanced_object_query = self.database_cursor.execute("SELECT * FROM objects_meta").fetchall()
+        #
+        # print(f"instanced_object query took: {perf_counter() - start}")
+        # start = perf_counter()
+        #
+        # for reference, max_extend_x, max_extend_y, max_extend_z, min_extend_x, min_extend_y, min_extend_z in instanced_object_query:
+        #     # TODO maybe draw rocks some where else
+        #     if any(key in reference.lower() for key in ["deco", "rock", "grass", "cattails", "foxglove"]):
+        #         continue
+        #     # print(f"instanced_object: {reference}")
+        #     char = '"'
+        #     instanced_objects_query = self.database_cursor.execute(
+        #         f"SELECT * FROM objects WHERE reference = {char}{reference}{char}").fetchall()
+        #     for reference_object, location_x, location_y, location_z, scale_x, scale_y, scale_z in instanced_objects_query:
+        #         index = self.get_index_from_coordinates(location_x + max_extend_x * scale_x,
+        #                                                 location_x + min_extend_x * scale_x,
+        #                                                 location_y + max_extend_y * scale_y,
+        #                                                 location_y + min_extend_y * scale_y)
+        #         # image.put(index * 3 + 0, trees_color[0])
+        #         # image.put(index * 3 + 1, trees_color[1])
+        #         # image.put(index * 3 + 2, trees_color[2])
+        #         if "corn" in reference.lower():
+        #             image.put(index * 3 + 0, corn_color[0])
+        #             image.put(index * 3 + 1, corn_color[1])
+        #             image.put(index * 3 + 2, corn_color[2])
+        #         elif "wheat" in reference.lower():
+        #             image.put(index * 3 + 0, wheat_color[0])
+        #             image.put(index * 3 + 1, wheat_color[1])
+        #             image.put(index * 3 + 2, wheat_color[2])
+        #         else:
+        #             # trees
+        #             # image.put(index * 3 + 0, 255)
+        #             # image.put(index * 3 + 1, 0)
+        #             # image.put(index * 3 + 2, 0)
+        #             # TODO find clean solution
+        #             # TODO generate forest patches
+        #             row_num = index // self.resolution
+        #             col_num = index % self.resolution
+        #             try:
+        #                 left_up = (row_num - 1) * self.resolution + col_num - 1
+        #                 image.put(left_up * 3 + 0, trees_color[0] + 20)
+        #                 image.put(left_up * 3 + 1, trees_color[1] + 20)
+        #                 image.put(left_up * 3 + 2, trees_color[2] + 20)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 up = (row_num - 1) * self.resolution + col_num
+        #                 image.put(up * 3 + 0, trees_color[0] + 10)
+        #                 image.put(up * 3 + 1, trees_color[1] + 10)
+        #                 image.put(up * 3 + 2, trees_color[2] + 10)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 right_up = (row_num - 1) * self.resolution + col_num + 1
+        #                 image.put(right_up * 3 + 0, trees_color[0] + 20)
+        #                 image.put(right_up * 3 + 1, trees_color[1] + 20)
+        #                 image.put(right_up * 3 + 2, trees_color[2] + 20)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 left = index - 1
+        #                 image.put(left * 3 + 0, trees_color[0] + 10)
+        #                 image.put(left * 3 + 1, trees_color[1] + 10)
+        #                 image.put(left * 3 + 2, trees_color[2] + 10)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 mid = index
+        #                 image.put(mid * 3 + 0, trees_color[0])
+        #                 image.put(mid * 3 + 1, trees_color[1])
+        #                 image.put(mid * 3 + 2, trees_color[2])
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 right = index + 1
+        #                 image.put(right * 3 + 0, trees_color[0] + 10)
+        #                 image.put(right * 3 + 1, trees_color[1] + 10)
+        #                 image.put(right * 3 + 2, trees_color[2] + 10)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 bot_left = (row_num + 1) * self.resolution + col_num - 1
+        #                 image.put(bot_left * 3 + 0, trees_color[0] + 20)
+        #                 image.put(bot_left * 3 + 1, trees_color[1] + 20)
+        #                 image.put(bot_left * 3 + 2, trees_color[2] + 20)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 bot = (row_num + 1) * self.resolution + col_num
+        #                 image.put(bot * 3 + 0, trees_color[0] + 10)
+        #                 image.put(bot * 3 + 1, trees_color[1] + 10)
+        #                 image.put(bot * 3 + 2, trees_color[2] + 10)
+        #             except IndexError:
+        #                 pass
+        #
+        #             try:
+        #                 bot_right = (row_num + 1) * self.resolution + col_num + 1
+        #                 image.put(bot_right * 3 + 0, trees_color[0] + 20)
+        #                 image.put(bot_right * 3 + 1, trees_color[1] + 20)
+        #                 image.put(bot_right * 3 + 2, trees_color[2] + 20)
+        #             except IndexError:
+        #                 pass
+        #     # element location | rotation | scale | min | max
+        #
+        # print(f"instanced_objects took: {perf_counter() - start}")
+
+        # start = perf_counter()
+        #
+        # if self.draw_progress:
+        #     self.debug_view.render_image(image.tobytes())
+        #
+        # print(f"terrain tress took: {perf_counter() - start}")
+
+        # TODO speed up took 6.3s
+
         start = perf_counter()
 
-        instanced_object_query = self.database_cursor.execute("SELECT * FROM objects_meta").fetchall()
-
-        print(f"instanced_object query took: {perf_counter() - start}")
-        start = perf_counter()
-
-        for reference, max_extend_x, max_extend_y, max_extend_z, min_extend_x, min_extend_y, min_extend_z in instanced_object_query:
-            # TODO maybe draw rocks some where else
-            if any(key in reference.lower() for key in ["deco", "rock", "grass", "cattails", "foxglove"]):
-                continue
-            # print(f"instanced_object: {reference}")
-            char = '"'
-            instanced_objects_query = self.database_cursor.execute(
-                f"SELECT * FROM objects WHERE reference = {char}{reference}{char}").fetchall()
-            for reference_object, location_x, location_y, location_z, scale_x, scale_y, scale_z in instanced_objects_query:
-                index = self.get_index_from_coordinates(location_x + max_extend_x * scale_x,
-                                                        location_x + min_extend_x * scale_x,
-                                                        location_y + max_extend_y * scale_y,
-                                                        location_y + min_extend_y * scale_y)
-                # image.put(index * 3 + 0, trees_color[0])
-                # image.put(index * 3 + 1, trees_color[1])
-                # image.put(index * 3 + 2, trees_color[2])
-                if "corn" in reference.lower():
-                    image.put(index * 3 + 0, corn_color[0])
-                    image.put(index * 3 + 1, corn_color[1])
-                    image.put(index * 3 + 2, corn_color[2])
-                elif "wheat" in reference.lower():
-                    image.put(index * 3 + 0, wheat_color[0])
-                    image.put(index * 3 + 1, wheat_color[1])
-                    image.put(index * 3 + 2, wheat_color[2])
-                else:
-                    # trees
-                    # image.put(index * 3 + 0, 255)
-                    # image.put(index * 3 + 1, 0)
-                    # image.put(index * 3 + 2, 0)
-                    # TODO find clean solution
-                    # TODO generate forest patches
-                    row_num = index // self.resolution
-                    col_num = index % self.resolution
-                    try:
-                        left_up = (row_num - 1) * self.resolution + col_num - 1
-                        image.put(left_up * 3 + 0, trees_color[0] + 20)
-                        image.put(left_up * 3 + 1, trees_color[1] + 20)
-                        image.put(left_up * 3 + 2, trees_color[2] + 20)
-                    except IndexError:
-                        pass
-
-                    try:
-                        up = (row_num - 1) * self.resolution + col_num
-                        image.put(up * 3 + 0, trees_color[0] + 10)
-                        image.put(up * 3 + 1, trees_color[1] + 10)
-                        image.put(up * 3 + 2, trees_color[2] + 10)
-                    except IndexError:
-                        pass
-
-                    try:
-                        right_up = (row_num - 1) * self.resolution + col_num + 1
-                        image.put(right_up * 3 + 0, trees_color[0] + 20)
-                        image.put(right_up * 3 + 1, trees_color[1] + 20)
-                        image.put(right_up * 3 + 2, trees_color[2] + 20)
-                    except IndexError:
-                        pass
-
-                    try:
-                        left = index - 1
-                        image.put(left * 3 + 0, trees_color[0] + 10)
-                        image.put(left * 3 + 1, trees_color[1] + 10)
-                        image.put(left * 3 + 2, trees_color[2] + 10)
-                    except IndexError:
-                        pass
-
-                    try:
-                        mid = index
-                        image.put(mid * 3 + 0, trees_color[0])
-                        image.put(mid * 3 + 1, trees_color[1])
-                        image.put(mid * 3 + 2, trees_color[2])
-                    except IndexError:
-                        pass
-
-                    try:
-                        right = index + 1
-                        image.put(right * 3 + 0, trees_color[0] + 10)
-                        image.put(right * 3 + 1, trees_color[1] + 10)
-                        image.put(right * 3 + 2, trees_color[2] + 10)
-                    except IndexError:
-                        pass
-
-                    try:
-                        bot_left = (row_num + 1) * self.resolution + col_num - 1
-                        image.put(bot_left * 3 + 0, trees_color[0] + 20)
-                        image.put(bot_left * 3 + 1, trees_color[1] + 20)
-                        image.put(bot_left * 3 + 2, trees_color[2] + 20)
-                    except IndexError:
-                        pass
-
-                    try:
-                        bot = (row_num + 1) * self.resolution + col_num
-                        image.put(bot * 3 + 0, trees_color[0] + 10)
-                        image.put(bot * 3 + 1, trees_color[1] + 10)
-                        image.put(bot * 3 + 2, trees_color[2] + 10)
-                    except IndexError:
-                        pass
-
-                    try:
-                        bot_right = (row_num + 1) * self.resolution + col_num + 1
-                        image.put(bot_right * 3 + 0, trees_color[0] + 20)
-                        image.put(bot_right * 3 + 1, trees_color[1] + 20)
-                        image.put(bot_right * 3 + 2, trees_color[2] + 20)
-                    except IndexError:
-                        pass
-            # element location | rotation | scale | min | max
-
-        print(f"instanced_objects took: {perf_counter() - start}")
-        start = perf_counter()
-
-        if self.draw_progress:
-            self.debug_view.render_image(image.tobytes())
-
-        print(f"terrain tress took: {perf_counter() - start}")
-
-        start = perf_counter()
-        terrain_water_query = "material LIKE" + " OR material LIKE".join(
-            [f"'%{key}%'"
-             for key in water_keys])
-        query_string = f"SELECT id " \
-                       f"FROM point " \
-                       f"WHERE " \
-                       f"{terrain_water_query}"
-        result_terrain_water_query = self.database_cursor.execute(query_string)
-        print(f"terrain water query took: {perf_counter() - start}")
-        start = perf_counter()
-        for point in result_terrain_water_query:
-            image.put(point[0] * 3 + 0, water_color[0])
-            image.put(point[0] * 3 + 1, water_color[1])
-            image.put(point[0] * 3 + 2, water_color[2])
+        image[self.point_data["id"][self.point_data["material"].str.contains(water_key)]] = water_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
 
         print(f"terrain water took: {perf_counter() - start}")
+        start = perf_counter()
 
         # Height Lines
-        # TODO speed up takes 77s
+        # NOTE speed up took: 109s
         if self.generate_height_lines:
             min_step = round(self.z_min / height_line_step_size) * height_line_step_size
             max_step = round(self.z_max / height_line_step_size) * height_line_step_size
 
-            start = perf_counter()
             z_map_range = 32
             for step in range(((min_step * -1 if min_step < 0 else min_step) + max_step) // height_line_step_size, 0, -1):
-                # if step:
+                start_in = perf_counter()
                 target_height = max_step - height_line_step_size * step
-                height_lines_keys_query = f"location_z BETWEEN {target_height - height_line_step_size / 2} " \
-                                          f"AND {target_height + height_line_step_size / 2} AND hit_actor LIKE '%landscape%'"
-                query_string = f"SELECT id, location_z " \
-                               f"FROM point " \
-                               f"WHERE " \
-                               f"{height_lines_keys_query}"
-                result_height_lines_query = self.database_cursor.execute(query_string)
-                # print(f"height lines query for {int(target_height / 100)}m took: {perf_counter() - start}")
-                # start = perf_counter()
-                points = dict(result_height_lines_query.fetchall())
+                lower_limit = target_height - height_line_step_size / 2
+                upper_limit = target_height + height_line_step_size / 2
+                points = dict(self.point_data[["id", "location_z"]]
+                              [self.point_data_landscape & ((self.point_data.location_z > lower_limit) &
+                               (self.point_data.location_z < upper_limit))].values)
+                start_in_after = perf_counter()
+                # NOTE 2-3x time spend below here -> optimize
                 for point_id, point_z in points.items():
+                    point_id = int(point_id)
+                    point_z = float(point_z)
                     value_ = (point_z - target_height) / (height_line_step_size / 2)
                     value = int((value_ - 1) * -1 * z_map_range if value_ > 0 else (value_ + 1) * z_map_range)
                     value = value * (255 / z_map_range)
@@ -547,79 +455,97 @@ class Mapper:
                         if 3 > self.num_equal(True,
                                               [abs(target_height - n) < abs(target_height - point_z) for n in neighbours]):
                             if 3 > self.num_equal(point_z, neighbours):
-                                image.put(point_id * 3 + 0, height_line_color[0])
-                                image.put(point_id * 3 + 1, height_line_color[1])
-                                image.put(point_id * 3 + 2, height_line_color[2])
+                                image[point_id] = height_line_color
                 if self.draw_progress:
                     self.debug_view.render_image(image.tobytes())
-                # print(f"height lines for {int(target_height / 100)}m took: {perf_counter() - start}")
+                print(f"    getting: {start_in_after - start_in}, working: {perf_counter() - start_in_after}")
         print(f"height lines took: {perf_counter() - start}")
 
         # Streets
+        # NOTE hit actor landscape, hit component = splinemeshcomponent
+        start = perf_counter()
 
-        start = perf_counter()
-        street_keys_query = "hit_actor LIKE" + " OR hit_actor LIKE".join([f"'%{key}%'"
-                                                                          for key in street_keys]) \
-                            + " OR hit_component LIKE" + " OR hit_component LIKE".join(
-            [f"'%{key}%'"
-             for key in street_keys]) + " OR material LIKE" + " OR material LIKE".join([f"'%{key}%'"
-                                                                                        for key in street_keys])
-        query_string = f"SELECT id, hit_actor, hit_component, material " \
-                       f"FROM point " \
-                       f"WHERE " \
-                       f"{street_keys_query}"
-        result_street_query = self.database_cursor.execute(query_string)
-        print(f"streets query took: {perf_counter() - start}")
-        start = perf_counter()
-        # TODO speed up takes 11s
-        for point in result_street_query:
-            # TODO filter for other road types
-            if any(key in point[2].lower() for key in bridge_keys):
-                color = bridge_color
-            elif any(key in point[2].lower() for key in main_road_keys):
-                color = main_road_color
-            elif any(key in point[2].lower() for key in road_keys):
-                color = road_color
-            elif any(key in point[3].lower() for key in small_road_keys):  # TODO find better keys for point[2]
-                color = road_color
-            else:
-                if "roadblock" in point[2].lower():
-                    color = 0, 0, 255
-                else:
-                    color = 255, 0, 0
-            image.put(point[0] * 3 + 0, color[0])
-            image.put(point[0] * 3 + 1, color[1])
-            image.put(point[0] * 3 + 2, color[2])
+        # infrastructure_indexes = self.point_data[self.point_data_landscape]["hit_component"].str.startswith("splinemeshcomponent")
+
+        infrastructure_indexes = self.point_data[self.point_data_landscape].loc[
+            (self.point_data["hit_component"].str.startswith("splinemeshcomponent")),
+        "id"
+        ]
+
+        spline_mesh_components = self.point_data[self.point_data["id"].isin(infrastructure_indexes)]["hit_component"].unique()
+        number_components = len(spline_mesh_components)
+        print(f"number_components: {number_components}")
+        for component in spline_mesh_components:
+            color = 0, 0, 0
+            image[self.point_data.loc[self.point_data["hit_component"].str.match(component), "id"]] = color
+        asphalt_indexes = self.point_data[infrastructure_indexes]["material"].str.contains("asphalt")
+
+        # TODO group streets by name splinemeshcomponent_*number*
+
+        # street_keys_query = "hit_actor LIKE" + " OR hit_actor LIKE".join([f"'%{key}%'"
+        #                                                                   for key in street_keys]) \
+        #                     + " OR hit_component LIKE" + " OR hit_component LIKE".join(
+        #     [f"'%{key}%'"
+        #      for key in street_keys]) + " OR material LIKE" + " OR material LIKE".join([f"'%{key}%'"
+        #                                                                                 for key in street_keys])
+        # query_string = f"SELECT id, hit_actor, hit_component, material " \
+        #                f"FROM point " \
+        #                f"WHERE " \
+        #                f"{street_keys_query}"
+        # result_street_query = self.database_cursor.execute(query_string)
+        # print(f"streets query took: {perf_counter() - start}")
+        # start = perf_counter()
+        # # NOTE speed up takes 11s
+        # for point in result_street_query:
+        #     # TODO filter for other road types
+        #     if any(key in point[2].lower() for key in bridge_keys):
+        #         color = bridge_color
+        #     elif any(key in point[2].lower() for key in main_road_keys):
+        #         color = main_road_color
+        #     elif any(key in point[2].lower() for key in road_keys):
+        #         color = road_color
+        #     elif any(key in point[3].lower() for key in small_road_keys):  # TODO find better keys for point[2]
+        #         color = road_color
+        #     else:
+        #         if "roadblock" in point[2].lower():
+        #             color = 0, 0, 255
+        #         else:
+        #             color = 255, 0, 0
+        #     image.put(point[0] * 3 + 0, color[0])
+        #     image.put(point[0] * 3 + 1, color[1])
+        #     image.put(point[0] * 3 + 2, color[2])
+
+        # image[infrastructure_indexes] = road_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
 
         print(f"streets took: {perf_counter() - start}")
 
-        # Buildings
-
-        start = perf_counter()
-        building_keys_query = "hit_component LIKE" + " OR hit_component LIKE".join(
-            [f"'%{key}%'"
-             for key in building_keys])
-        query_string = f"SELECT id " \
-                       f"FROM point " \
-                       f"WHERE " \
-                       f"{building_keys_query}"
-        result_buildings_query = self.database_cursor.execute(query_string)
-        print(f"buildings query took: {perf_counter() - start}")
-        start = perf_counter()
-        # TODO speed up takes 23s
-        for point in result_buildings_query:
-            image.put(point[0] * 3 + 0, building_color[0])
-            image.put(point[0] * 3 + 1, building_color[1])
-            image.put(point[0] * 3 + 2, building_color[2])
-
-        if self.draw_progress:
-            self.debug_view.render_image(image.tobytes())
-
-        print(f"buildings took: {perf_counter() - start}")
-        return image
+        # # Buildings
+        #
+        # start = perf_counter()
+        # building_keys_query = "hit_component LIKE" + " OR hit_component LIKE".join(
+        #     [f"'%{key}%'"
+        #      for key in building_keys])
+        # query_string = f"SELECT id " \
+        #                f"FROM point " \
+        #                f"WHERE " \
+        #                f"{building_keys_query}"
+        # result_buildings_query = self.database_cursor.execute(query_string)
+        # print(f"buildings query took: {perf_counter() - start}")
+        # start = perf_counter()
+        # # NOTE speed up takes 23s
+        # for point in result_buildings_query:
+        #     image.put(point[0] * 3 + 0, building_color[0])
+        #     image.put(point[0] * 3 + 1, building_color[1])
+        #     image.put(point[0] * 3 + 2, building_color[2])
+        #
+        # if self.draw_progress:
+        #     self.debug_view.render_image(image.tobytes())
+        #
+        # print(f"buildings took: {perf_counter() - start}")
+        return image.reshape(self.resolution, self.resolution, 3, order="C")
 
     def generate_image(self):  # TODO mege with generate from db
         image = Image.fromarray(self.generate_from_db())
@@ -627,10 +553,10 @@ class Mapper:
 
 
 # noinspection SpellCheckingInspection
-mapper = Mapper("Yehorivka_AAS_v8",
+mapper = Mapper("Narva_AAS_v1",
                 in_memory_bool=False,
                 generate_bool=True,
-                generate__height_lines_bool=True,
+                generate__height_lines_bool=False,
                 debug_view_bool=False,
                 draw_progress=False)
 

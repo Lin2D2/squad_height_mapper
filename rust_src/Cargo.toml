@@ -1,0 +1,8 @@
+[package]
+name = "rust_squad_height_mapper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+image = "0.25.1"
+polars = {version = "0.41.3", features = ["lazy", "strings", "regex", "performant", "rows", "unique_counts", "list_count", "arg_where", "fmt"]}
