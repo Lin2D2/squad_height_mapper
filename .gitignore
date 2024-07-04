@@ -1,0 +1,8 @@
+/rust_src/target/
+/rust_src/.vs/
+/venv/
+*.csv
+*.png
+*.BMP
+*.r16
+*.HDR
