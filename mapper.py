@@ -2,6 +2,7 @@ import os
 import os.path
 import math
 import json
+import random
 
 from time import perf_counter
 
@@ -95,20 +96,17 @@ class Mapper:
         self.height_to_colour = lambda height, reduction: int((height + self.z_min * -1) /
                                                               ((self.z_min * -1 + self.z_max) / reduction))
         # noinspection SpellCheckingInspection
-        mapper_data_files = list(sorted(filter(lambda o: o.lower().find("mapperoutput") != -1,
-                                               os.listdir(folder_name)),
-                                        key=lambda name: int(name.split("_")[-2])))
-        instanced_data_files = list(filter(lambda o: o.lower().find("instanced") != -1,
-                                           os.listdir(folder_name)))
+        mapper_data_file = list(filter(lambda o: o.lower().find("mapperoutput") != -1, os.listdir(folder_name)))[0]
+        instanced_data_files = list(filter(lambda o: o.lower().find("instanced") != -1, os.listdir(folder_name)))
         reference_image = os.path.join(folder_name, list(filter(lambda o: o.lower().find(".bmp") != -1,
                                                                 os.listdir(folder_name)))[0])
         print(f"loading files from folder: {folder_name}")
         print(f"parsing data")
         start_time = perf_counter()
 
-        self.point_data = pd.read_csv('Yehorivka_AAS_v8_mapperOutput.csv')
+        self.point_data = pd.read_csv(os.path.join(folder_name, mapper_data_file))
 
-        self.point_data_landscape = self.point_data["hit_actor"].str.contains("landscape")
+        self.point_data_landscape = self.point_data["hit_actor"].str.match("landscape")
 
         self.resolution = int(math.sqrt(self.point_data["id"][self.point_data_landscape].max())) + 1
         self.x_min = self.point_data["location_x"][self.point_data_landscape].min()
@@ -179,13 +177,13 @@ class Mapper:
         #
         # # ---------------
 
-        self.x_extend = abs(self.x_max) + abs(self.x_min)
-        self.y_extend = abs(self.y_max) + abs(self.y_min)
-
-        if self.x_extend != self.y_extend:
-            print("::WARNING:: extends not equal")
-
-        self.step_size = self.x_extend / self.resolution
+        # self.x_extend = abs(self.x_max) + abs(self.x_min)
+        # self.y_extend = abs(self.y_max) + abs(self.y_min)
+        #
+        # if self.x_extend != self.y_extend:
+        #     print("::WARNING:: extends not equal")
+        # TODO read from file
+        self.step_size = 100
 
         print(f"parsing took: {perf_counter() - start_time}")
         start_time = perf_counter()
@@ -288,12 +286,13 @@ class Mapper:
 
         # Terrain
         start = perf_counter()
-        image[self.point_data["id"][self.point_data["material"].str.contains(grass_key)]] = grass_color
+        image[self.point_data["id"][self.point_data["material"].str.contains(grass_key) & self.point_data_landscape]] = grass_color
 
         if self.draw_progress:
             self.debug_view.render_image(image.tobytes())
 
         print(f"terrain grass took: {perf_counter() - start}")
+
         # start = perf_counter()
         #
         # instanced_object_query = self.database_cursor.execute("SELECT * FROM objects_meta").fetchall()
@@ -408,14 +407,18 @@ class Mapper:
         #     # element location | rotation | scale | min | max
         #
         # print(f"instanced_objects took: {perf_counter() - start}")
+
         # start = perf_counter()
         #
         # if self.draw_progress:
         #     self.debug_view.render_image(image.tobytes())
         #
         # print(f"terrain tress took: {perf_counter() - start}")
+
         # TODO speed up took 6.3s
+
         start = perf_counter()
+
         image[self.point_data["id"][self.point_data["material"].str.contains(water_key)]] = water_color
 
         if self.draw_progress:
@@ -425,7 +428,7 @@ class Mapper:
         start = perf_counter()
 
         # Height Lines
-        # TODO speed up took: 109s
+        # NOTE speed up took: 109s
         if self.generate_height_lines:
             min_step = round(self.z_min / height_line_step_size) * height_line_step_size
             max_step = round(self.z_max / height_line_step_size) * height_line_step_size
@@ -440,7 +443,7 @@ class Mapper:
                               [self.point_data_landscape & ((self.point_data.location_z > lower_limit) &
                                (self.point_data.location_z < upper_limit))].values)
                 start_in_after = perf_counter()
-                # TODO 2-3x time spend below here -> optimize
+                # NOTE 2-3x time spend below here -> optimize
                 for point_id, point_z in points.items():
                     point_id = int(point_id)
                     point_z = float(point_z)
@@ -457,10 +460,28 @@ class Mapper:
                     self.debug_view.render_image(image.tobytes())
                 print(f"    getting: {start_in_after - start_in}, working: {perf_counter() - start_in_after}")
         print(f"height lines took: {perf_counter() - start}")
-        #
-        # # Streets
-        #
-        # start = perf_counter()
+
+        # Streets
+        # NOTE hit actor landscape, hit component = splinemeshcomponent
+        start = perf_counter()
+
+        # infrastructure_indexes = self.point_data[self.point_data_landscape]["hit_component"].str.startswith("splinemeshcomponent")
+
+        infrastructure_indexes = self.point_data[self.point_data_landscape].loc[
+            (self.point_data["hit_component"].str.startswith("splinemeshcomponent")),
+        "id"
+        ]
+
+        spline_mesh_components = self.point_data[self.point_data["id"].isin(infrastructure_indexes)]["hit_component"].unique()
+        number_components = len(spline_mesh_components)
+        print(f"number_components: {number_components}")
+        for component in spline_mesh_components:
+            color = 0, 0, 0
+            image[self.point_data.loc[self.point_data["hit_component"].str.match(component), "id"]] = color
+        asphalt_indexes = self.point_data[infrastructure_indexes]["material"].str.contains("asphalt")
+
+        # TODO group streets by name splinemeshcomponent_*number*
+
         # street_keys_query = "hit_actor LIKE" + " OR hit_actor LIKE".join([f"'%{key}%'"
         #                                                                   for key in street_keys]) \
         #                     + " OR hit_component LIKE" + " OR hit_component LIKE".join(
@@ -474,7 +495,7 @@ class Mapper:
         # result_street_query = self.database_cursor.execute(query_string)
         # print(f"streets query took: {perf_counter() - start}")
         # start = perf_counter()
-        # # TODO speed up takes 11s
+        # # NOTE speed up takes 11s
         # for point in result_street_query:
         #     # TODO filter for other road types
         #     if any(key in point[2].lower() for key in bridge_keys):
@@ -493,12 +514,14 @@ class Mapper:
         #     image.put(point[0] * 3 + 0, color[0])
         #     image.put(point[0] * 3 + 1, color[1])
         #     image.put(point[0] * 3 + 2, color[2])
-        #
-        # if self.draw_progress:
-        #     self.debug_view.render_image(image.tobytes())
-        #
-        # print(f"streets took: {perf_counter() - start}")
-        #
+
+        # image[infrastructure_indexes] = road_color
+
+        if self.draw_progress:
+            self.debug_view.render_image(image.tobytes())
+
+        print(f"streets took: {perf_counter() - start}")
+
         # # Buildings
         #
         # start = perf_counter()
@@ -512,7 +535,7 @@ class Mapper:
         # result_buildings_query = self.database_cursor.execute(query_string)
         # print(f"buildings query took: {perf_counter() - start}")
         # start = perf_counter()
-        # # TODO speed up takes 23s
+        # # NOTE speed up takes 23s
         # for point in result_buildings_query:
         #     image.put(point[0] * 3 + 0, building_color[0])
         #     image.put(point[0] * 3 + 1, building_color[1])
@@ -522,7 +545,7 @@ class Mapper:
         #     self.debug_view.render_image(image.tobytes())
         #
         # print(f"buildings took: {perf_counter() - start}")
-        return image.reshape(self.resolution, self.resolution, 3)
+        return image.reshape(self.resolution, self.resolution, 3, order="C")
 
     def generate_image(self):  # TODO mege with generate from db
         image = Image.fromarray(self.generate_from_db())
@@ -530,10 +553,10 @@ class Mapper:
 
 
 # noinspection SpellCheckingInspection
-mapper = Mapper("Yehorivka_AAS_v8",
-                in_memory_bool=True,
+mapper = Mapper("Narva_AAS_v1",
+                in_memory_bool=False,
                 generate_bool=True,
-                generate__height_lines_bool=True,
+                generate__height_lines_bool=False,
                 debug_view_bool=False,
                 draw_progress=False)
 
