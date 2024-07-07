@@ -6,8 +6,27 @@ use polars::lazy::dsl::col;
 use polars::prelude::*;
 use image;
 
-const MAP_DATA_PATH: &str = "C:/Users/space/Desktop/squad_height_mapper";
+const MAP_DATA_PATH: &str = "/home/space/Documents/squad_height_mapper";  // TODO do this realative instead of absolute
+
+const HEIGHT_LINE_STEP_SIZE: u32 = 1000;  // 2500 = 25m
+// TODO write height in the line example: ----- 2000 ------
+
+const DEFAULT_COLOR: [u8; 3] = [255, 253, 238];
+
+const HEIGHT_LINE_COLOR: [u8; 3] = [128, 128, 128];
+
 const GRASS_COLOR: [u8; 3] = [209, 240, 197];
+const DIRT_COLOR: [u8; 3] = DEFAULT_COLOR;
+const TREES_COLOR: [u8; 3] = [181, 194, 112];
+const WATER_COLOR: [u8; 3] = [210, 232, 250];
+const MUD_COLOR: [u8; 3] = [202, 203, 134];
+const BRIDGE_COLOR: [u8; 3] = [255, 255, 0];  // TODO find bridge color
+const MAIN_ROAD_COLOR: [u8; 3] = [255, 109, 44];
+const ROAD_COLOR: [u8; 3] = [255, 166, 39];
+const SIDE_ROAD_COLOR: [u8; 3] = [255, 255, 255];
+const SMALL_ROAD_COLOR: [u8; 3] = [230, 160, 120];
+const TRAIN_TRACK_COLOR: [u8; 3] = [102, 102, 102];
+const BUILDING_COLOR: [u8; 3] = [168, 168, 168];
 
 
 fn load_map_data(map_name: &str) -> PolarsResult<DataFrame> {
@@ -76,7 +95,7 @@ fn main() {
     // let map_data_landscape: DataFrame = map_data.filter(&map_data
     //     .column("hit_actor_path").unwrap()
     //     .equal("landscape").unwrap()).unwrap();
-    let map_data_landscape: DataFrame = map_data.lazy().filter(col("hit_actor_path").eq(lit("landscape"))).collect().unwrap();
+    let map_data_landscape: DataFrame = map_data.clone().lazy().filter(col("hit_actor_path").eq(lit("landscape"))).collect().unwrap();
     
     { // Grass
         let map_data_grass_locations: DataFrame = map_data_landscape.clone().lazy()
@@ -86,6 +105,17 @@ fn main() {
 
         for id in grass_indexes.i64().unwrap() {
             _image_buffer[id.unwrap() as usize] = GRASS_COLOR.to_vec();
+        }
+    }
+
+    { // Water  // TODO dosent find anything
+        let map_data_water_locations: DataFrame = map_data.clone().lazy()
+        .filter(col("material").str().contains(lit("water"), false)).collect().unwrap();
+        let grass_indexes: &Series = map_data_water_locations.column("id").unwrap();
+        println!("map_data_water_locations length: {}", grass_indexes.head(Some(10)));
+
+        for id in grass_indexes.i64().unwrap() {
+            _image_buffer[id.unwrap() as usize] = WATER_COLOR.to_vec();
         }
     }
 
