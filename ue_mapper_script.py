@@ -9,6 +9,14 @@ import unreal
 # 1uu = 1cm would be 100.0
 
 
+def get_dir_and_type(_object):
+    print("-------------------------------------")
+    print(type(_object))
+    for e in dir(_object):
+        print(e)
+    print("-------------------------------------")
+
+
 # class HitResult:
 #     blocking_hit = False,
 #     initial_overlap = False,
@@ -93,6 +101,13 @@ class Transform:
         assert len(in_tuple) == 3
         return cls(in_tuple[0], in_tuple[1], in_tuple[2])
 
+    def to_dict(self):
+        return {
+            "location": self.location,
+            "rotation": self.rotation,
+            "scale": self.scale,
+        }
+
 
 class Bounds:
     max_x = None
@@ -115,6 +130,11 @@ class Bounds:
             self.min_y = min_y
         if min_z is not None:
             self.min_z = min_z
+
+    @classmethod
+    def from_tuple(cls, in_tuple):
+        assert len(in_tuple) == 2
+        return cls(in_tuple[1][0], in_tuple[1][1], in_tuple[1][2], in_tuple[0][0], in_tuple[0][1], in_tuple[0][2])
 
     def __str__(self):
         return (f"max_x: {self.max_x}, min_x: {self.min_x}, max_y: {self.max_y}, "
@@ -184,6 +204,8 @@ class ExtractLevelData:
         self.level_actors = unreal.EditorLevelLibrary.get_all_level_actors()
         # Landscape
         self.landscape = list(filter(lambda x: type(x) is unreal.Landscape, self.level_actors))[0]
+        # LandscapeSplinesComponent
+        self.landscape_splines_component = self.landscape.get_components_by_class(unreal.LandscapeSplinesComponent)[0]
         # StaticMeshActor
         self.static_mesh_actor = list(filter(lambda x: type(x) is unreal.StaticMeshActor, self.level_actors))
         # SQInstancedStaticMeshActor
@@ -239,6 +261,36 @@ class ExtractLevelData:
         # NOTE write map_data to file
         with open(os.path.join(self.export_folder_path, "map_data.json"), "w+") as file:
             json.dump(self.object_data, file)
+
+    def run(self):
+        self.get_instances()
+        self.run_mapper()
+
+    def get_instances(self):
+        data = {
+            "landscape_spline_mesh_components": dict()
+        }
+        # LandscapeSplinesMeshComponents
+        landscape_spline_mesh_components = self.landscape_splines_component.get_spline_mesh_components()
+
+        for spline_mesh_component in landscape_spline_mesh_components:
+            data["landscape_spline_mesh_components"].update({
+                    spline_mesh_component.get_full_name().lower():
+                    {
+                        "materials": [material.get_full_name().lower() for material in spline_mesh_component.get_materials()],
+                        "world_transform": Transform.from_tuple(spline_mesh_component.get_world_transform().to_tuple()).to_dict(),
+                        "static_mesh_path_name": spline_mesh_component.static_mesh.get_path_name().lower(),
+                        "static_mesh_bounding_box": Bounds.from_tuple([e.to_tuple() for e in spline_mesh_component.static_mesh.get_bounding_box().to_tuple()]).to_dict()
+                    }
+                }
+            )
+
+        with open(os.path.join(
+                self.export_folder_path,
+                f"{self.current_map.get_name()}_{self.step_size}_get_instances.json"),
+                "w+") as file:
+            json.dump(data, file)
+            # json.dump(data, file, indent=2)
 
     def run_mapper(self):
         map_to_load = self.current_map
@@ -452,8 +504,12 @@ if __name__ == "__main__":
     extract_level_data = ExtractLevelData(map_to_load_, 100, debug=False)
 
     start_t = time.perf_counter()
-    extract_level_data.run_mapper()
-    print(f"mapper took: {(time.perf_counter() - start_t)}s")
+    extract_level_data.get_instances()
+    print(f"get_instances took: {(time.perf_counter() - start_t)}s")
+
+    # start_t = time.perf_counter()
+    # extract_level_data.run_mapper()
+    # print(f"mapper took: {(time.perf_counter() - start_t)}s")
 
     print("end")
 

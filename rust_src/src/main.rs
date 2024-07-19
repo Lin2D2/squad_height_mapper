@@ -1,6 +1,13 @@
+use std::any::Any;
 use std::io;
 use std::fs;
 use std::collections::HashMap;
+use std::io::Write;
+use itertools::Itertools;
+use cast::{usize};
+use std::iter::FromIterator;
+use serde::Deserialize;
+
 
 use polars::lazy::dsl::col;
 use polars::prelude::*;
@@ -29,7 +36,35 @@ const TRAIN_TRACK_COLOR: [u8; 3] = [102, 102, 102];
 const BUILDING_COLOR: [u8; 3] = [168, 168, 168];
 
 
-fn load_map_data(map_name: &str) -> PolarsResult<DataFrame> {
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+struct Instances {
+    landscape_spline_mesh_components: HashMap<String, SplineMeshComponent>
+}
+
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+
+// NOTE name is key in HashMap
+struct SplineMeshComponent {
+    materials: Vec<String>,
+    world_transform: HashMap<String, Vec<f32>>,
+    static_mesh_path_name: String,
+    static_mesh_bounding_box: HashMap<String, f32>
+}
+
+
+fn to_i64<'a>(v: &AnyValue<'a>) -> i64 {
+    if let AnyValue::Int64(b) = v {
+        *b
+    } else {
+        panic!("not a i64, {}", v.is_signed_integer());
+    }
+}
+
+
+fn load_map_data(map_name: &str) -> DataFrame {
     let paths: fs::ReadDir = fs::read_dir(vec![MAP_DATA_PATH.to_owned(), map_name.to_string()].join("/")).unwrap();
 
     let mut _avalible_files: HashMap<u8, String> = HashMap::new();
@@ -64,12 +99,44 @@ fn load_map_data(map_name: &str) -> PolarsResult<DataFrame> {
 
     // let csv_file_path: String = vec![MAP_DATA_PATH.to_owned(), map_name.to_string(), csv_file_name.to_string()].join("/");
 
-    CsvReadOptions::default()
+    return CsvReadOptions::default()
     .with_has_header(true)
-    .try_into_reader_with_file_path(Some(csv_file_path.into()))?
-    .finish()
+    .try_into_reader_with_file_path(Some(csv_file_path.into())).unwrap()
+    .finish().expect("failed to load csv")
 }
 
+fn load_instance_data(map_name: &str) -> Instances {
+    let paths: fs::ReadDir = fs::read_dir(vec![MAP_DATA_PATH.to_owned(), map_name.to_string()].join("/")).unwrap();
+
+    let mut _avalible_files: HashMap<u8, String> = HashMap::new();
+
+    let mut _i:u8 = 1;
+    for raw_path in paths {
+        let path: fs::DirEntry = raw_path.unwrap();
+        let file_path: String = path.path().display().to_string();
+        let filename: String = path.file_name().into_string().unwrap();
+        if filename.contains(".json") {
+            _avalible_files.insert(_i, file_path);
+            println!("{}: {}", _i.to_string(), filename);
+            _i += 1;
+        }
+    }
+
+    // println!("select file to open by number: ");
+
+    // let mut line: String = String::new();
+    // io::stdin().read_line(&mut line).unwrap();
+
+    // let input_as_u8: u8 = line.trim().parse::<u8>().expect("Input not an integer");
+    // TODO remove DEBUG only
+    let input_as_u8: u8 = 2;
+
+    let json_file_path: &String = &_avalible_files[&input_as_u8];
+
+    println!("opening json at: {}", json_file_path);
+
+    return serde_json::from_str(&fs::read_to_string(json_file_path).expect("could not open file")).expect("JSON was not well-formatted");
+}
 
 fn id_max_map_data(map_data: &DataFrame) -> f64 {
     map_data.column("id").unwrap().max::<f64>().unwrap().unwrap()
@@ -80,8 +147,13 @@ fn main() {
     println!("start");
     let map_name: &str = "Narva_AAS_v1";
 
-    // Import data
-    let map_data: DataFrame = load_map_data(map_name).expect("failed to load csv");
+    // Import instance data
+    let instance_data: Instances = load_instance_data(map_name);
+
+    println!("{:?}", instance_data.landscape_spline_mesh_components.len());
+
+    // Import mapper data
+    let map_data: DataFrame = load_map_data(map_name);
     // println!("{}", map_data.head(Some(10)));
 
     // Calc basic values
@@ -108,7 +180,7 @@ fn main() {
         }
     }
 
-    { // Water  // TODO dosent find anything
+    { // Water
         let map_data_water_locations: DataFrame = map_data.clone().lazy()
         .filter(col("material").str().contains(lit("water"), false)).collect().unwrap();
         let grass_indexes: &Series = map_data_water_locations.column("id").unwrap();
@@ -116,6 +188,53 @@ fn main() {
 
         for id in grass_indexes.i64().unwrap() {
             _image_buffer[id.unwrap() as usize] = WATER_COLOR.to_vec();
+        }
+    }
+
+    { // Road
+        let map_data_infrastructure: DataFrame = map_data_landscape.clone().lazy()
+        .filter(col("hit_component").str().contains(lit("splinemeshcomponent"), false)).collect().unwrap();
+        let road_data: Vec<&Series> = map_data_infrastructure.columns(["id", "hit_component"]).unwrap();
+        println!("map_data_infrastructure length: {}", road_data[0].head(Some(10)));
+
+        // let unique_road_ids: Vec<_> = Itertools::unique(road_data[1].iter()).collect_vec();
+        // let mut bimap_road: bimap::BiHashMap<i32, String> = bimap::BiHashMap::new();
+
+        // for i in 0..unique_road_ids.len() {
+        //     bimap_road.insert(i as i32, unique_road_ids[i].to_string());
+        // }
+
+        // let mut road_splines: Vec<Vec<i64>> = vec![Vec::new(); unique_road_ids.len()];
+
+        // for (id, hit_component) in road_data[0].i64().unwrap().iter().zip(road_data[1].iter()) {
+        //     road_splines[*bimap_road.get_by_right(&hit_component.to_string()).unwrap() as usize].push(id.unwrap());
+        // }
+
+        // fs::File::create("road_splines.json").expect("create file");
+
+        // let mut road_splines_file = fs::OpenOptions::new().write(true).append(true).open("road_splines.json").unwrap();
+        // road_splines_file.write_all(b"{\"road_splines\": [").expect("file write start");
+        // let mut first: bool = true;
+        // for (index, spline_ids) in road_splines.iter().enumerate() {
+        //     if !first {
+        //         road_splines_file.write_all(b",\n").expect("file write new line");
+        //     }
+        //     road_splines_file.write_all(vec!["{\"hit_component\": ".to_string(), bimap_road.get_by_left(&(index as i32)).unwrap().to_string().to_owned(), ", \"ids\": [".to_string(), spline_ids.iter().join(", "), "]}".to_string()].join("").as_bytes()).expect("file write splines");
+        //     first = false
+        // }
+        // road_splines_file.write_all(b"]}").expect("file write end");
+
+
+        for (id, hit_component) in road_data[0].iter().zip(road_data[1].iter()) {
+            // println!("{}", hit_component.to_string().replace("\"", ""));
+            // break;
+            let component_data = instance_data.landscape_spline_mesh_components.get(&hit_component.to_string().replace("\"", ""));
+            if component_data.is_none() {
+                continue;
+            }
+            if component_data.unwrap().static_mesh_path_name.contains("road") {
+                _image_buffer[to_i64(&id) as usize] = ROAD_COLOR.to_vec();
+            }
         }
     }
 
